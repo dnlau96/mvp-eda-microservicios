@@ -33,9 +33,10 @@ Eventos principales:
 
 ## Flujo funcional
 
-1. El estudiante registra asistencia con `carnet`, `career`, `talk_code` y `talk_title`.
-2. Asistencia valida que no exista otro registro para el mismo `carnet + talk_code`.
-3. Asistencia guarda estado `PENDIENTE` en PostgreSQL.
+1. Asistencia administra el catalogo de charlas en la tabla `talks`.
+2. El estudiante registra asistencia seleccionando una charla existente.
+3. Asistencia valida que no exista otro registro para el mismo `carnet + talk_code`.
+4. Asistencia guarda estado `PENDIENTE` en PostgreSQL.
 4. Asistencia publica `AsistenciaRegistrada`.
 5. Pagos consulta MongoDB.
 6. Pagos publica `PagoVerificado` o `PagoRechazado`.
@@ -43,12 +44,15 @@ Eventos principales:
 8. Panel escucha `PagoVerificado` y replica el registro aprobado en MySQL.
 9. El estudiante califica la charla desde Asistencia solo si tiene estado `APROBADO`.
 10. El Panel permite a profesores consultar asistentes por charla, carrera, carnet o nombre.
+11. El Panel carga el catalogo de charlas desde Asistencia y permite al profesor calificar charlas.
 
 ## Persistencia y consistencia
 
 Cada microservicio tiene su propia base de datos:
 
 - PostgreSQL: tabla `attendance`.
+- PostgreSQL: tabla `talks`.
+- PostgreSQL: tabla `talk_ratings`.
 - MongoDB: coleccion `payments`.
 - MySQL: tablas `approved_attendance` y `ratings`.
 
@@ -137,6 +141,8 @@ La carpeta `ansible/` incluye:
 ```text
 POST /asistencia
 GET  /asistencias
+GET  /charlas
+POST /charlas
 POST /calificar-charla
 GET  /calificaciones-charla
 
@@ -145,6 +151,9 @@ POST /pagos
 DELETE /pagos/:student_id
 
 GET  /panel
+GET  /charlas
+POST /calificar-charla
+GET  /calificaciones-charla
 ```
 
 ## Caso de prueba principal

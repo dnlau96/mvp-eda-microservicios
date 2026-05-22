@@ -33,7 +33,7 @@ HTML = """
     input, select, textarea { box-sizing: border-box; width: 100%; padding: 11px; border: 1px solid #c6ccda; border-radius: 6px; }
     textarea { min-height: 74px; resize: vertical; }
     button { margin-top: 16px; width: 100%; padding: 12px; border: 0; border-radius: 6px; background: #0f766e; color: white; font-weight: 700; cursor: pointer; }
-    #message, #ratingMessage { margin-top: 14px; padding: 10px; border-radius: 6px; display: none; }
+    #message, #ratingMessage, #talkMessage { margin-top: 14px; padding: 10px; border-radius: 6px; display: none; }
     .ok { display: block !important; background: #dcfce7; color: #166534; }
     .error { display: block !important; background: #fee2e2; color: #991b1b; }
     table { width: 100%; border-collapse: collapse; margin-top: 12px; }
@@ -59,6 +59,22 @@ HTML = """
   </header>
   <main class="grid">
     <section>
+      <h2>Crear charla</h2>
+      <form id="talkForm">
+        <label>Codigo de charla</label>
+        <input id="new_talk_code" value="SIS-EDA-001" />
+        <label>Titulo</label>
+        <input id="new_talk_title" value="Arquitecturas Dirigidas por Eventos" />
+        <label>Carrera</label>
+        <select id="new_talk_career">
+          <option>Ciencias y Sistemas</option>
+          <option>Ingenieria Civil</option>
+          <option>Ingenieria Industrial</option>
+        </select>
+        <button>Crear / actualizar charla</button>
+      </form>
+      <div id="talkMessage"></div>
+
       <h2>Nueva asistencia</h2>
       <form id="form">
         <label>Carnet</label>
@@ -71,10 +87,8 @@ HTML = """
           <option>Ingenieria Civil</option>
           <option>Ingenieria Industrial</option>
         </select>
-        <label>Codigo de charla</label>
-        <input id="talk_id" value="SIS-EDA-001" />
-        <label>Titulo de charla</label>
-        <input id="talk_title" value="Arquitecturas Dirigidas por Eventos" />
+        <label>Charla</label>
+        <select id="talk_id"></select>
         <button>Registrar y publicar evento</button>
       </form>
       <div id="message"></div>
@@ -84,7 +98,7 @@ HTML = """
         <label>Carnet</label>
         <input id="rating_carnet" value="201544138" />
         <label>Codigo de charla</label>
-        <input id="rating_talk_code" value="SIS-EDA-001" />
+        <select id="rating_talk_code"></select>
         <label>Puntuacion</label>
         <select id="rating_value">
           <option value="5">5 - Excelente</option>
@@ -101,6 +115,12 @@ HTML = """
     </section>
     <section>
       <h2>Asistencias</h2>
+      <h2>Charlas creadas</h2>
+      <table>
+        <thead><tr><th>Codigo</th><th>Titulo</th><th>Carrera</th></tr></thead>
+        <tbody id="talkRows"></tbody>
+      </table>
+      <h2 style="margin-top:24px">Asistencias</h2>
       <table>
         <thead><tr><th>ID</th><th>Carnet</th><th>Carrera</th><th>Charla</th><th>Estado</th></tr></thead>
         <tbody id="rows"></tbody>
@@ -117,10 +137,21 @@ HTML = """
       student_id.value = "stu-002";
       student_name.value = "Luis Pendiente";
       career.value = "Ingenieria Civil";
-      talk_id.value = "CIV-EST-001";
-      talk_title.value = "Estructuras y gestion de obra";
       rating_carnet.value = student_id.value;
+      talk_id.value = "CIV-EST-001";
       rating_talk_code.value = talk_id.value;
+    }
+    async function loadTalks() {
+      const data = await fetch("/charlas").then(r => r.json());
+      const options = data.map(x => `<option value="${x.talk_code}">${x.talk_code} - ${x.talk_title}</option>`).join("");
+      talk_id.innerHTML = options;
+      rating_talk_code.innerHTML = options;
+      talkRows.innerHTML = data.map(x => `
+        <tr>
+          <td>${x.talk_code}</td>
+          <td>${x.talk_title}</td>
+          <td>${x.career}</td>
+        </tr>`).join("");
     }
     async function loadRows() {
       const data = await fetch("/asistencias").then(r => r.json());
@@ -154,8 +185,7 @@ HTML = """
           student_name: student_name.value,
           career: career.value,
           talk_id: talk_id.value,
-          talk_code: talk_id.value,
-          talk_title: talk_title.value
+          talk_code: talk_id.value
         })
       });
       const result = await response.json();
@@ -165,6 +195,22 @@ HTML = """
         : (result.detail || result.error || "No se pudo registrar la asistencia");
       setTimeout(loadRows, 1200);
       loadRows();
+    });
+    talkForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const response = await fetch("/charlas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          talk_code: new_talk_code.value,
+          talk_title: new_talk_title.value,
+          career: new_talk_career.value
+        })
+      });
+      const result = await response.json();
+      talkMessage.className = response.ok ? "ok" : "error";
+      talkMessage.textContent = response.ok ? "Charla guardada" : (result.detail || "No se pudo guardar la charla");
+      await loadTalks();
     });
     ratingForm.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -186,6 +232,7 @@ HTML = """
       loadRatings();
     });
     loadRows();
+    loadTalks();
     loadRatings();
     setInterval(loadRows, 2500);
   </script>
@@ -202,6 +249,12 @@ class AttendanceIn(BaseModel):
     talk_id: str | None = None
     talk_code: str | None = None
     talk_title: str = "Arquitecturas Dirigidas por Eventos"
+
+
+class TalkIn(BaseModel):
+    talk_code: str
+    talk_title: str
+    career: str
 
 
 class TalkRatingIn(BaseModel):
@@ -231,6 +284,16 @@ def init_db():
         with conn.cursor() as cur:
             cur.execute(
                 """
+                CREATE TABLE IF NOT EXISTS talks (
+                  talk_code VARCHAR(50) PRIMARY KEY,
+                  talk_title VARCHAR(160) NOT NULL,
+                  career VARCHAR(80) NOT NULL,
+                  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS attendance (
                   id SERIAL PRIMARY KEY,
                   student_id VARCHAR(50) NOT NULL,
@@ -241,6 +304,15 @@ def init_db():
                   status VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE',
                   created_at TIMESTAMP NOT NULL DEFAULT NOW()
                 )
+                """
+            )
+            cur.execute(
+                """
+                INSERT INTO talks (talk_code, talk_title, career) VALUES
+                ('SIS-EDA-001', 'Arquitecturas Dirigidas por Eventos', 'Ciencias y Sistemas'),
+                ('CIV-EST-001', 'Estructuras y gestion de obra', 'Ingenieria Civil'),
+                ('IND-PRO-001', 'Optimizacion de procesos industriales', 'Ingenieria Industrial')
+                ON CONFLICT (talk_code) DO NOTHING
                 """
             )
             cur.execute(
@@ -359,6 +431,14 @@ def register_attendance(data: AttendanceIn):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute(
+                "SELECT talk_title, career FROM talks WHERE talk_code = %s",
+                (talk_code,),
+            )
+            talk = cur.fetchone()
+            if not talk:
+                raise HTTPException(status_code=400, detail=f"La charla {talk_code} no existe. Debe crearse antes de registrar asistencia.")
+            talk_title, talk_career = talk
+            cur.execute(
                 """
                 SELECT id, status FROM attendance
                 WHERE student_id = %s AND talk_id = %s
@@ -379,7 +459,7 @@ def register_attendance(data: AttendanceIn):
                     VALUES (%s, %s, %s, %s, %s, 'PENDIENTE')
                     RETURNING id, status
                     """,
-                    (carnet, data.student_name, data.career, talk_code, data.talk_title),
+                    (carnet, data.student_name, data.career, talk_code, talk_title),
                 )
             except psycopg2.IntegrityError:
                 raise HTTPException(
@@ -396,7 +476,8 @@ def register_attendance(data: AttendanceIn):
         "career": data.career,
         "talk_id": talk_code,
         "talk_code": talk_code,
-        "talk_title": data.talk_title,
+        "talk_title": talk_title,
+        "talk_career": talk_career,
     }
     publish_event("AsistenciaRegistrada", event)
     return {"attendance_id": attendance_id, "status": status, "event": "AsistenciaRegistrada"}
@@ -454,6 +535,46 @@ def rate_talk(data: TalkRatingIn):
 @app.get("/", response_class=HTMLResponse)
 def home():
     return HTML
+
+
+@app.post("/charlas")
+def upsert_talk(data: TalkIn):
+    allowed = {"Ingenieria Civil", "Ingenieria Industrial", "Ciencias y Sistemas"}
+    if data.career not in allowed:
+        raise HTTPException(status_code=400, detail="Carrera invalida")
+    if not data.talk_code.strip() or not data.talk_title.strip():
+        raise HTTPException(status_code=400, detail="Codigo y titulo son obligatorios")
+
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO talks (talk_code, talk_title, career)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (talk_code)
+                DO UPDATE SET talk_title = EXCLUDED.talk_title, career = EXCLUDED.career
+                """,
+                (data.talk_code.strip(), data.talk_title.strip(), data.career),
+            )
+    return {"ok": True}
+
+
+@app.get("/charlas")
+def list_talks():
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT talk_code, talk_title, career, created_at FROM talks ORDER BY talk_code")
+            rows = cur.fetchall()
+    return [
+        {
+            "talk_code": row[0],
+            "talk_id": row[0],
+            "talk_title": row[1],
+            "career": row[2],
+            "created_at": row[3].isoformat(),
+        }
+        for row in rows
+    ]
 
 
 @app.get("/asistencias")

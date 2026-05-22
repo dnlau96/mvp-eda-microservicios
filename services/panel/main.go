@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -35,6 +36,13 @@ type Rating struct {
 	Comment      string `json:"comment"`
 }
 
+type TalkRating struct {
+	TalkCode string `json:"talk_code"`
+	Rating   int    `json:"rating"`
+	Comment  string `json:"comment"`
+	Teacher  string `json:"teacher"`
+}
+
 var db *sql.DB
 
 const html = `<!doctype html>
@@ -46,19 +54,20 @@ const html = `<!doctype html>
   <style>
     body { margin: 0; font-family: Arial, sans-serif; background: #f5f8f6; color: #172018; }
     header { background: #166534; color: white; padding: 28px 36px; }
-    main { max-width: 1120px; margin: 28px auto; padding: 0 20px; }
+    main { max-width: 1120px; margin: 28px auto; padding: 0 20px; display: grid; grid-template-columns: 1.4fr .8fr; gap: 20px; }
     .filters { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: 12px; align-items: end; }
     section { background: white; border: 1px solid #d8e5dc; border-radius: 8px; padding: 20px; }
     h1, h2 { margin: 0 0 10px; }
     label { display: block; margin: 14px 0 6px; font-weight: 700; }
-    input, select { box-sizing: border-box; width: 100%; padding: 11px; border: 1px solid #bdd0c3; border-radius: 6px; }
+    input, select, textarea { box-sizing: border-box; width: 100%; padding: 11px; border: 1px solid #bdd0c3; border-radius: 6px; }
+    textarea { min-height: 72px; resize: vertical; }
     button { width: 100%; padding: 12px; border: 0; border-radius: 6px; background: #166534; color: white; font-weight: 700; cursor: pointer; }
     table { width: 100%; border-collapse: collapse; margin-top: 12px; }
     th, td { padding: 10px; border-bottom: 1px solid #e5eee8; text-align: left; }
     .tag { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #dcfce7; color: #166534; font-size: 12px; font-weight: 700; }
     .links { margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
     .links a { color: white; text-decoration: none; border: 1px solid rgba(255,255,255,.5); padding: 8px 10px; border-radius: 6px; }
-    @media (max-width: 880px) { .filters { grid-template-columns: 1fr; } }
+    @media (max-width: 880px) { main, .filters { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -77,7 +86,7 @@ const html = `<!doctype html>
       <form id="filters" class="filters">
         <div>
           <label>Codigo de charla</label>
-          <input id="talk_code" placeholder="SIS-EDA-001" />
+          <select id="talk_code"><option value="">Todas</option></select>
         </div>
         <div>
           <label>Carrera</label>
@@ -109,8 +118,42 @@ const html = `<!doctype html>
         <tbody id="approved"></tbody>
       </table>
     </section>
+    <section>
+      <h2>Calificar charla</h2>
+      <form id="ratingForm">
+        <label>Profesor</label>
+        <input id="teacher" value="Profesor Demo" />
+        <label>Charla</label>
+        <select id="rating_talk_code"></select>
+        <label>Puntuacion</label>
+        <select id="rating_value">
+          <option value="5">5 - Excelente</option>
+          <option value="4">4 - Muy buena</option>
+          <option value="3">3 - Buena</option>
+          <option value="2">2 - Regular</option>
+          <option value="1">1 - Mala</option>
+        </select>
+        <label>Comentario</label>
+        <textarea id="rating_comment">Buena charla para el congreso</textarea>
+        <button>Guardar calificacion</button>
+      </form>
+      <h2 style="margin-top:24px">Calificaciones de profesores</h2>
+      <table>
+        <thead><tr><th>Charla</th><th>Profesor</th><th>Nota</th></tr></thead>
+        <tbody id="ratingRows"></tbody>
+      </table>
+    </section>
   </main>
   <script>
+    async function loadTalks() {
+      const data = await fetch("/charlas").then(r => r.json());
+      talk_code.innerHTML = "<option value=''>Todas</option>" + data.map(x =>
+        "<option value='" + x.talk_code + "'>" + x.talk_code + " - " + x.talk_title + "</option>"
+      ).join("");
+      rating_talk_code.innerHTML = data.map(x =>
+        "<option value='" + x.talk_code + "'>" + x.talk_code + " - " + x.talk_title + "</option>"
+      ).join("");
+    }
     async function loadApproved() {
       const params = new URLSearchParams();
       if (talk_code.value) params.set("talk_code", talk_code.value);
@@ -132,7 +175,32 @@ const html = `<!doctype html>
       event.preventDefault();
       loadApproved();
     });
-    loadApproved();
+    async function loadRatings() {
+      const data = await fetch("/calificaciones-charla").then(r => r.json());
+      ratingRows.innerHTML = data.map(x =>
+        "<tr>" +
+        "<td>" + x.talk_code + "</td>" +
+        "<td>" + x.teacher + "</td>" +
+        "<td>" + x.rating + "/5</td>" +
+        "</tr>"
+      ).join("");
+    }
+    ratingForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await fetch("/calificar-charla", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          talk_code: rating_talk_code.value,
+          rating: Number(rating_value.value),
+          comment: rating_comment.value,
+          teacher: teacher.value
+        })
+      });
+      loadRatings();
+    });
+    loadTalks().then(loadApproved);
+    loadRatings();
     setInterval(loadApproved, 2500);
   </script>
 </body>
@@ -178,6 +246,14 @@ func initDB() {
 			student_id VARCHAR(50) NOT NULL,
 			talk_id VARCHAR(50) NOT NULL,
 			reviewer_type VARCHAR(20) NOT NULL DEFAULT 'ESTUDIANTE',
+			rating INT NOT NULL,
+			comment VARCHAR(255),
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS professor_talk_ratings (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			talk_id VARCHAR(50) NOT NULL,
+			teacher VARCHAR(120) NOT NULL,
 			rating INT NOT NULL,
 			comment VARCHAR(255),
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -399,6 +475,73 @@ func ratingsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
+func rateTalkHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	var rating TalkRating
+	if err := json.NewDecoder(r.Body).Decode(&rating); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	if rating.Rating < 1 || rating.Rating > 5 {
+		http.Error(w, "rating debe estar entre 1 y 5", 400)
+		return
+	}
+	if rating.Teacher == "" {
+		rating.Teacher = "Profesor Demo"
+	}
+	_, err := db.Exec(
+		"INSERT INTO professor_talk_ratings (talk_id, teacher, rating, comment) VALUES (?, ?, ?, ?)",
+		rating.TalkCode, rating.Teacher, rating.Rating, rating.Comment,
+	)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
+func talkRatingsHandler(w http.ResponseWriter, r *http.Request) {
+	rows, err := db.Query("SELECT talk_id, teacher, rating, comment, created_at FROM professor_talk_ratings ORDER BY id DESC LIMIT 100")
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	defer rows.Close()
+
+	result := []map[string]any{}
+	for rows.Next() {
+		var talkID, teacher, comment string
+		var rating int
+		var createdAt time.Time
+		rows.Scan(&talkID, &teacher, &rating, &comment, &createdAt)
+		result = append(result, map[string]any{
+			"talk_code":  talkID,
+			"talk_id":    talkID,
+			"teacher":    teacher,
+			"rating":     rating,
+			"comment":    comment,
+			"created_at": createdAt.Format(time.RFC3339),
+		})
+	}
+	json.NewEncoder(w).Encode(result)
+}
+
+func talksProxyHandler(w http.ResponseWriter, r *http.Request) {
+	asistenciaURL := env("ASISTENCIA_URL", "http://asistencia-service:8000")
+	resp, err := http.Get(asistenciaURL + "/charlas")
+	if err != nil {
+		http.Error(w, err.Error(), 502)
+		return
+	}
+	defer resp.Body.Close()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
+
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(html))
@@ -415,6 +558,9 @@ func main() {
 	http.HandleFunc("/panel", panelHandler)
 	http.HandleFunc("/calificar", rateHandler)
 	http.HandleFunc("/calificaciones", ratingsHandler)
+	http.HandleFunc("/calificar-charla", rateTalkHandler)
+	http.HandleFunc("/calificaciones-charla", talkRatingsHandler)
+	http.HandleFunc("/charlas", talksProxyHandler)
 	http.HandleFunc("/", homeHandler)
 
 	log.Println("Panel service en :8080")

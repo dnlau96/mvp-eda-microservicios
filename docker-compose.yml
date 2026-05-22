@@ -99,6 +99,7 @@ services:
     environment:
       MYSQL_DSN: panel:panel@tcp(mysql:3306)/panel_db?parseTime=true
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      ASISTENCIA_URL: http://asistencia-service:8000
     ports:
       - "8003:8080"
     depends_on:

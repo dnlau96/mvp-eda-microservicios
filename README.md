@@ -70,6 +70,8 @@ CIV-EST-001  Estructuras y gestion de obra
 IND-PRO-001  Optimizacion de procesos industriales
 ```
 
+Las charlas se crean desde el microservicio de Asistencia y luego aparecen en el selector de Asistencia y en el Panel de Profesores. No se puede registrar asistencia a una charla que no exista.
+
 Carnet con pago aprobado:
 
 ```cmd
@@ -95,6 +97,8 @@ Ver panel de aprobados:
 ```cmd
 curl http://localhost:8003/panel
 ```
+
+El Panel de Profesores carga las charlas desde Asistencia y permite filtrar por charla, carrera, carnet/nombre y limite de resultados. Tambien permite que el profesor califique una charla.
 
 Calificar charla desde el microservicio de Asistencia:
 
