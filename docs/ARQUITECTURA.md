@@ -35,16 +35,16 @@ Eventos principales:
 
 1. Asistencia administra el catalogo de charlas en la tabla `talks`.
 2. El estudiante registra asistencia seleccionando una charla existente.
-3. Asistencia valida que no exista otro registro para el mismo `carnet + talk_code`.
-4. Asistencia guarda estado `PENDIENTE` en PostgreSQL.
-4. Asistencia publica `AsistenciaRegistrada`.
-5. Pagos consulta MongoDB.
-6. Pagos publica `PagoVerificado` o `PagoRechazado`.
-7. Asistencia actualiza el estado a `APROBADO` o `CANCELADO`.
-8. Panel escucha `PagoVerificado` y replica el registro aprobado en MySQL.
-9. El estudiante califica la charla desde Asistencia solo si tiene estado `APROBADO`.
-10. El Panel permite a profesores consultar asistentes por charla, carrera, carnet o nombre.
-11. El Panel carga el catalogo de charlas desde Asistencia y permite al profesor calificar charlas.
+3. Asistencia valida el pago de forma sincrona contra Pagos.
+4. Si el carnet no esta pagado, Asistencia rechaza el registro con `402`.
+5. Asistencia valida que no exista otro registro para el mismo `carnet + talk_code`.
+6. Asistencia guarda estado `PENDIENTE` en PostgreSQL.
+7. Asistencia publica `AsistenciaRegistrada`.
+8. Pagos consulta MongoDB y publica `PagoVerificado`.
+9. Asistencia actualiza el estado a `APROBADO`.
+10. Panel escucha `PagoVerificado` y replica el registro aprobado en MySQL.
+11. El Panel permite a profesores consultar asistentes por charla, carrera, carnet o nombre.
+12. El Panel carga el catalogo de charlas desde Asistencia y permite al profesor calificar charlas.
 
 ## Persistencia y consistencia
 
@@ -52,9 +52,8 @@ Cada microservicio tiene su propia base de datos:
 
 - PostgreSQL: tabla `attendance`.
 - PostgreSQL: tabla `talks`.
-- PostgreSQL: tabla `talk_ratings`.
 - MongoDB: coleccion `payments`.
-- MySQL: tablas `approved_attendance` y `ratings`.
+- MySQL: tablas `approved_attendance`, `ratings` y `professor_talk_ratings`.
 
 La consistencia entre servicios es eventual. El estado inicial queda `PENDIENTE` y luego cambia cuando llegan los eventos de respuesta desde Pagos.
 
@@ -79,6 +78,7 @@ Este es un prototipo local, no una configuracion productiva. Aun asi, se aplican
 - Endpoints de escritura con validaciones de dominio.
 - Validacion de duplicados para integridad de datos.
 - Login administrativo en Pagos para evitar que estudiantes modifiquen pagos.
+- Verificacion previa de pago antes de registrar asistencia.
 - Filtros y limites de consulta en Panel para manejar grupos grandes.
 - Separacion de bases de datos por microservicio.
 
@@ -141,19 +141,22 @@ La carpeta `ansible/` incluye:
 ```text
 POST /asistencia
 GET  /asistencias
+DELETE /asistencias/{id}
 GET  /charlas
 POST /charlas
-POST /calificar-charla
-GET  /calificaciones-charla
+DELETE /charlas/{talk_code}
 
 GET  /pagos
 POST /pagos
 DELETE /pagos/:student_id
+GET  /verificar-pago/:student_id
 
 GET  /panel
+DELETE /panel/{attendance_id}
 GET  /charlas
 POST /calificar-charla
 GET  /calificaciones-charla
+DELETE /calificaciones-charla/{id}
 ```
 
 ## Caso de prueba principal

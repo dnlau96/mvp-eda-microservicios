@@ -72,6 +72,8 @@ IND-PRO-001  Optimizacion de procesos industriales
 
 Las charlas se crean desde el microservicio de Asistencia y luego aparecen en el selector de Asistencia y en el Panel de Profesores. No se puede registrar asistencia a una charla que no exista.
 
+Asistencia verifica primero el pago contra el microservicio de Pagos. Si el carnet aparece como `NO PAGADO` o no existe en Pagos, no se registra asistencia y se muestra el motivo.
+
 Carnet con pago aprobado:
 
 ```cmd
@@ -98,18 +100,18 @@ Ver panel de aprobados:
 curl http://localhost:8003/panel
 ```
 
-El Panel de Profesores carga las charlas desde Asistencia y permite filtrar por charla, carrera, carnet/nombre y limite de resultados. Tambien permite que el profesor califique una charla.
+El Panel de Profesores carga las charlas desde Asistencia, permite filtrar por charla, carrera, carnet/nombre y limite de resultados. Tambien permite que el profesor califique una charla y editar/eliminar calificaciones.
 
-Calificar charla desde el microservicio de Asistencia:
+Calificar charla desde el Panel de Profesores:
 
 ```cmd
-curl -X POST http://localhost:8001/calificar-charla -H "Content-Type: application/json" -d "{\"carnet\":\"201544138\",\"talk_code\":\"SIS-EDA-001\",\"rating\":5,\"comment\":\"Excelente charla\"}"
+curl -X POST http://localhost:8003/calificar-charla -H "Content-Type: application/json" -d "{\"talk_code\":\"SIS-EDA-001\",\"teacher\":\"Profesor Demo\",\"rating\":5,\"comment\":\"Excelente tema\"}"
 ```
 
-Ver calificaciones de charlas:
+Ver calificaciones de profesores:
 
 ```cmd
-curl http://localhost:8001/calificaciones-charla
+curl http://localhost:8003/calificaciones-charla
 ```
 
 Filtrar panel de profesores por charla:

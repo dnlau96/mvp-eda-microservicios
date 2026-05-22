@@ -2,6 +2,8 @@ import json
 import os
 import threading
 import time
+import urllib.request
+import urllib.error
 
 import pika
 import psycopg2
@@ -11,6 +13,7 @@ from pydantic import BaseModel
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://asistencia:asistencia@localhost:5432/asistencia_db")
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
+PAGOS_URL = os.getenv("PAGOS_URL", "http://localhost:8002")
 EXCHANGE = "mvp_eventos"
 
 app = FastAPI(title="Asistencia Service")
@@ -33,7 +36,12 @@ HTML = """
     input, select, textarea { box-sizing: border-box; width: 100%; padding: 11px; border: 1px solid #c6ccda; border-radius: 6px; }
     textarea { min-height: 74px; resize: vertical; }
     button { margin-top: 16px; width: 100%; padding: 12px; border: 0; border-radius: 6px; background: #0f766e; color: white; font-weight: 700; cursor: pointer; }
-    #message, #ratingMessage, #talkMessage { margin-top: 14px; padding: 10px; border-radius: 6px; display: none; }
+    button.secondary { background: #334155; }
+    button.danger { background: #b91c1c; }
+    .row-actions { display: flex; gap: 8px; }
+    .row-actions button { width: auto; margin: 0; padding: 8px 10px; }
+    .hidden { display: none; }
+    #message, #talkMessage { margin-top: 14px; padding: 10px; border-radius: 6px; display: none; }
     .ok { display: block !important; background: #dcfce7; color: #166534; }
     .error { display: block !important; background: #fee2e2; color: #991b1b; }
     table { width: 100%; border-collapse: collapse; margin-top: 12px; }
@@ -59,7 +67,9 @@ HTML = """
   </header>
   <main class="grid">
     <section>
-      <h2>Crear charla</h2>
+      <button type="button" class="secondary" onclick="toggleTalkForm()">Crear / editar charla</button>
+      <div id="talkPanel" class="hidden">
+      <h2 style="margin-top:16px">Crear charla</h2>
       <form id="talkForm">
         <label>Codigo de charla</label>
         <input id="new_talk_code" value="SIS-EDA-001" />
@@ -74,6 +84,7 @@ HTML = """
         <button>Crear / actualizar charla</button>
       </form>
       <div id="talkMessage"></div>
+      </div>
 
       <h2>Nueva asistencia</h2>
       <form id="form">
@@ -93,64 +104,44 @@ HTML = """
       </form>
       <div id="message"></div>
       <button type="button" onclick="fillPending()">Usar estudiante sin pago</button>
-      <h2 style="margin-top:24px">Calificar charla</h2>
-      <form id="ratingForm">
-        <label>Carnet</label>
-        <input id="rating_carnet" value="201544138" />
-        <label>Codigo de charla</label>
-        <select id="rating_talk_code"></select>
-        <label>Puntuacion</label>
-        <select id="rating_value">
-          <option value="5">5 - Excelente</option>
-          <option value="4">4 - Muy buena</option>
-          <option value="3">3 - Buena</option>
-          <option value="2">2 - Regular</option>
-          <option value="1">1 - Mala</option>
-        </select>
-        <label>Comentario</label>
-        <textarea id="rating_comment">Excelente charla</textarea>
-        <button>Enviar calificacion</button>
-      </form>
-      <div id="ratingMessage"></div>
     </section>
     <section>
       <h2>Asistencias</h2>
       <h2>Charlas creadas</h2>
       <table>
-        <thead><tr><th>Codigo</th><th>Titulo</th><th>Carrera</th></tr></thead>
+        <thead><tr><th>Codigo</th><th>Titulo</th><th>Carrera</th><th>Acciones</th></tr></thead>
         <tbody id="talkRows"></tbody>
       </table>
       <h2 style="margin-top:24px">Asistencias</h2>
       <table>
-        <thead><tr><th>ID</th><th>Carnet</th><th>Carrera</th><th>Charla</th><th>Estado</th></tr></thead>
+        <thead><tr><th>ID</th><th>Carnet</th><th>Carrera</th><th>Charla</th><th>Estado</th><th>Acciones</th></tr></thead>
         <tbody id="rows"></tbody>
-      </table>
-      <h2 style="margin-top:24px">Calificaciones de charlas</h2>
-      <table>
-        <thead><tr><th>Carnet</th><th>Charla</th><th>Nota</th><th>Comentario</th></tr></thead>
-        <tbody id="ratingRows"></tbody>
       </table>
     </section>
   </main>
   <script>
     function fillPending() {
-      student_id.value = "stu-002";
-      student_name.value = "Luis Pendiente";
+      student_id.value = "201544139";
+      student_name.value = "Estudiante Pendiente";
       career.value = "Ingenieria Civil";
-      rating_carnet.value = student_id.value;
       talk_id.value = "CIV-EST-001";
-      rating_talk_code.value = talk_id.value;
+    }
+    function toggleTalkForm() {
+      talkPanel.classList.toggle("hidden");
     }
     async function loadTalks() {
       const data = await fetch("/charlas").then(r => r.json());
       const options = data.map(x => `<option value="${x.talk_code}">${x.talk_code} - ${x.talk_title}</option>`).join("");
       talk_id.innerHTML = options;
-      rating_talk_code.innerHTML = options;
       talkRows.innerHTML = data.map(x => `
         <tr>
           <td>${x.talk_code}</td>
           <td>${x.talk_title}</td>
           <td>${x.career}</td>
+          <td><div class="row-actions">
+            <button type="button" onclick='editTalk(${JSON.stringify(x)})'>Editar</button>
+            <button type="button" class="danger" onclick='deleteTalk("${x.talk_code}")'>Eliminar</button>
+          </div></td>
         </tr>`).join("");
     }
     async function loadRows() {
@@ -162,17 +153,29 @@ HTML = """
           <td>${x.career}</td>
           <td>${x.talk_code}<br><small>${x.talk_title}</small></td>
           <td><span class="pill ${x.status}">${x.status}</span></td>
+          <td><div class="row-actions">
+            <button type="button" class="danger" onclick="deleteAttendance(${x.id})">Eliminar</button>
+          </div></td>
         </tr>`).join("");
     }
-    async function loadRatings() {
-      const data = await fetch("/calificaciones-charla").then(r => r.json());
-      ratingRows.innerHTML = data.map(x => `
-        <tr>
-          <td>${x.carnet}</td>
-          <td>${x.talk_code}</td>
-          <td>${x.rating}/5</td>
-          <td>${x.comment || ""}</td>
-        </tr>`).join("");
+    function editTalk(row) {
+      talkPanel.classList.remove("hidden");
+      new_talk_code.value = row.talk_code;
+      new_talk_title.value = row.talk_title;
+      new_talk_career.value = row.career;
+    }
+    async function deleteTalk(code) {
+      if (!confirm("Eliminar charla " + code + "?")) return;
+      const response = await fetch("/charlas/" + encodeURIComponent(code), { method: "DELETE" });
+      const result = await response.json();
+      talkMessage.className = response.ok ? "ok" : "error";
+      talkMessage.textContent = response.ok ? "Charla eliminada" : (result.detail || "No se pudo eliminar la charla");
+      await loadTalks();
+    }
+    async function deleteAttendance(id) {
+      if (!confirm("Eliminar asistencia #" + id + "?")) return;
+      await fetch("/asistencias/" + id, { method: "DELETE" });
+      loadRows();
     }
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -212,28 +215,8 @@ HTML = """
       talkMessage.textContent = response.ok ? "Charla guardada" : (result.detail || "No se pudo guardar la charla");
       await loadTalks();
     });
-    ratingForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const response = await fetch("/calificar-charla", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          carnet: rating_carnet.value,
-          talk_code: rating_talk_code.value,
-          rating: Number(rating_value.value),
-          comment: rating_comment.value
-        })
-      });
-      const result = await response.json();
-      ratingMessage.className = response.ok ? "ok" : "error";
-      ratingMessage.textContent = response.ok
-        ? "Calificacion guardada"
-        : (result.detail || "No se pudo guardar la calificacion");
-      loadRatings();
-    });
     loadRows();
     loadTalks();
-    loadRatings();
     setInterval(loadRows, 2500);
   </script>
 </body>
@@ -382,6 +365,20 @@ def publish_event(event_type, payload):
     conn.close()
 
 
+def verify_payment(carnet):
+    try:
+        with urllib.request.urlopen(f"{PAGOS_URL}/verificar-pago/{carnet}", timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=503, detail=f"No se pudo verificar el pago en este momento: {exc}")
+
+    if not payload.get("paid"):
+        reason = payload.get("reason", "El estudiante no aparece como pagado")
+        raise HTTPException(status_code=402, detail=f"No se puede registrar asistencia: {reason}")
+
+    return payload
+
+
 def handle_payment_response(event_type, body):
     payload = json.loads(body)
     status = "APROBADO" if event_type == "PagoVerificado" else "CANCELADO"
@@ -427,6 +424,8 @@ def register_attendance(data: AttendanceIn):
     talk_code = data.talk_code or data.talk_id
     if not carnet or not talk_code:
         raise HTTPException(status_code=400, detail="carnet y talk_code son obligatorios")
+
+    verify_payment(carnet)
 
     with get_db() as conn:
         with conn.cursor() as cur:
@@ -577,6 +576,19 @@ def list_talks():
     ]
 
 
+@app.delete("/charlas/{talk_code}")
+def delete_talk(talk_code: str):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM attendance WHERE talk_id = %s", (talk_code,))
+            if cur.fetchone()[0] > 0:
+                raise HTTPException(status_code=409, detail="No se puede eliminar una charla que ya tiene asistencias")
+            cur.execute("DELETE FROM talks WHERE talk_code = %s", (talk_code,))
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Charla no encontrada")
+    return {"ok": True}
+
+
 @app.get("/asistencias")
 def list_attendance():
     with get_db() as conn:
@@ -600,6 +612,16 @@ def list_attendance():
         }
         for row in rows
     ]
+
+
+@app.delete("/asistencias/{attendance_id}")
+def delete_attendance(attendance_id: int):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM attendance WHERE id = %s", (attendance_id,))
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Asistencia no encontrada")
+    return {"ok": True}
 
 
 @app.get("/calificaciones-charla")

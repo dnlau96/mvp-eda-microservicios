@@ -37,6 +37,7 @@ type Rating struct {
 }
 
 type TalkRating struct {
+	ID       int    `json:"id"`
 	TalkCode string `json:"talk_code"`
 	Rating   int    `json:"rating"`
 	Comment  string `json:"comment"`
@@ -62,6 +63,9 @@ const html = `<!doctype html>
     input, select, textarea { box-sizing: border-box; width: 100%; padding: 11px; border: 1px solid #bdd0c3; border-radius: 6px; }
     textarea { min-height: 72px; resize: vertical; }
     button { width: 100%; padding: 12px; border: 0; border-radius: 6px; background: #166534; color: white; font-weight: 700; cursor: pointer; }
+    button.danger { background: #b91c1c; }
+    .row-actions { display: flex; gap: 8px; }
+    .row-actions button { width: auto; padding: 8px 10px; }
     table { width: 100%; border-collapse: collapse; margin-top: 12px; }
     th, td { padding: 10px; border-bottom: 1px solid #e5eee8; text-align: left; }
     .tag { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #dcfce7; color: #166534; font-size: 12px; font-weight: 700; }
@@ -114,7 +118,7 @@ const html = `<!doctype html>
       </form>
       <h2 style="margin-top:24px">Estudiantes aprobados</h2>
       <table>
-        <thead><tr><th>Asistencia</th><th>Carnet</th><th>Carrera</th><th>Charla</th><th>Estado</th></tr></thead>
+        <thead><tr><th>Asistencia</th><th>Carnet</th><th>Carrera</th><th>Charla</th><th>Estado</th><th>Acciones</th></tr></thead>
         <tbody id="approved"></tbody>
       </table>
     </section>
@@ -123,6 +127,7 @@ const html = `<!doctype html>
       <form id="ratingForm">
         <label>Profesor</label>
         <input id="teacher" value="Profesor Demo" />
+        <input id="rating_id" type="hidden" />
         <label>Charla</label>
         <select id="rating_talk_code"></select>
         <label>Puntuacion</label>
@@ -139,7 +144,7 @@ const html = `<!doctype html>
       </form>
       <h2 style="margin-top:24px">Calificaciones de profesores</h2>
       <table>
-        <thead><tr><th>Charla</th><th>Profesor</th><th>Nota</th></tr></thead>
+        <thead><tr><th>Charla</th><th>Profesor</th><th>Nota</th><th>Acciones</th></tr></thead>
         <tbody id="ratingRows"></tbody>
       </table>
     </section>
@@ -168,6 +173,7 @@ const html = `<!doctype html>
         "<td>" + x.career + "</td>" +
         "<td>" + x.talk_id + "<br><small>" + x.talk_title + "</small></td>" +
         "<td><span class='tag'>APROBADO</span></td>" +
+        "<td><div class='row-actions'><button type='button' class='danger' onclick='deleteApproved(" + x.attendance_id + ")'>Eliminar</button></div></td>" +
         "</tr>"
       ).join("");
     }
@@ -182,8 +188,29 @@ const html = `<!doctype html>
         "<td>" + x.talk_code + "</td>" +
         "<td>" + x.teacher + "</td>" +
         "<td>" + x.rating + "/5</td>" +
+        "<td><div class='row-actions'>" +
+        "<button type='button' onclick='editRating(" + JSON.stringify(x) + ")'>Editar</button>" +
+        "<button type='button' class='danger' onclick='deleteRating(" + x.id + ")'>Eliminar</button>" +
+        "</div></td>" +
         "</tr>"
       ).join("");
+    }
+    function editRating(row) {
+      rating_id.value = row.id || "";
+      rating_talk_code.value = row.talk_code;
+      teacher.value = row.teacher;
+      rating_value.value = String(row.rating);
+      rating_comment.value = row.comment || "";
+    }
+    async function deleteRating(id) {
+      if (!confirm("Eliminar calificacion?")) return;
+      await fetch("/calificaciones-charla/" + id, { method: "DELETE" });
+      loadRatings();
+    }
+    async function deleteApproved(attendanceId) {
+      if (!confirm("Eliminar registro aprobado #" + attendanceId + " del panel?")) return;
+      await fetch("/panel/" + attendanceId, { method: "DELETE" });
+      loadApproved();
     }
     ratingForm.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -192,11 +219,13 @@ const html = `<!doctype html>
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           talk_code: rating_talk_code.value,
+          id: Number(rating_id.value || 0),
           rating: Number(rating_value.value),
           comment: rating_comment.value,
           teacher: teacher.value
         })
       });
+      rating_id.value = "";
       loadRatings();
     });
     loadTalks().then(loadApproved);
@@ -492,10 +521,18 @@ func rateTalkHandler(w http.ResponseWriter, r *http.Request) {
 	if rating.Teacher == "" {
 		rating.Teacher = "Profesor Demo"
 	}
-	_, err := db.Exec(
-		"INSERT INTO professor_talk_ratings (talk_id, teacher, rating, comment) VALUES (?, ?, ?, ?)",
-		rating.TalkCode, rating.Teacher, rating.Rating, rating.Comment,
-	)
+	var err error
+	if rating.ID > 0 {
+		_, err = db.Exec(
+			"UPDATE professor_talk_ratings SET talk_id = ?, teacher = ?, rating = ?, comment = ?, created_at = CURRENT_TIMESTAMP WHERE id = ?",
+			rating.TalkCode, rating.Teacher, rating.Rating, rating.Comment, rating.ID,
+		)
+	} else {
+		_, err = db.Exec(
+			"INSERT INTO professor_talk_ratings (talk_id, teacher, rating, comment) VALUES (?, ?, ?, ?)",
+			rating.TalkCode, rating.Teacher, rating.Rating, rating.Comment,
+		)
+	}
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -504,7 +541,7 @@ func rateTalkHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func talkRatingsHandler(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT talk_id, teacher, rating, comment, created_at FROM professor_talk_ratings ORDER BY id DESC LIMIT 100")
+	rows, err := db.Query("SELECT id, talk_id, teacher, rating, comment, created_at FROM professor_talk_ratings ORDER BY id DESC LIMIT 100")
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -513,11 +550,13 @@ func talkRatingsHandler(w http.ResponseWriter, r *http.Request) {
 
 	result := []map[string]any{}
 	for rows.Next() {
+		var id int
 		var talkID, teacher, comment string
 		var rating int
 		var createdAt time.Time
-		rows.Scan(&talkID, &teacher, &rating, &comment, &createdAt)
+		rows.Scan(&id, &talkID, &teacher, &rating, &comment, &createdAt)
 		result = append(result, map[string]any{
+			"id":         id,
 			"talk_code":  talkID,
 			"talk_id":    talkID,
 			"teacher":    teacher,
@@ -527,6 +566,34 @@ func talkRatingsHandler(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	json.NewEncoder(w).Encode(result)
+}
+
+func deleteTalkRatingHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "use DELETE", http.StatusMethodNotAllowed)
+		return
+	}
+	id := r.URL.Path[len("/calificaciones-charla/"):]
+	_, err := db.Exec("DELETE FROM professor_talk_ratings WHERE id = ?", id)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
+func deleteApprovedHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "use DELETE", http.StatusMethodNotAllowed)
+		return
+	}
+	attendanceID := r.URL.Path[len("/panel/"):]
+	_, err := db.Exec("DELETE FROM approved_attendance WHERE attendance_id = ?", attendanceID)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
 func talksProxyHandler(w http.ResponseWriter, r *http.Request) {
@@ -556,10 +623,12 @@ func main() {
 	go consumeVerifiedPayments(rabbitURL)
 
 	http.HandleFunc("/panel", panelHandler)
+	http.HandleFunc("/panel/", deleteApprovedHandler)
 	http.HandleFunc("/calificar", rateHandler)
 	http.HandleFunc("/calificaciones", ratingsHandler)
 	http.HandleFunc("/calificar-charla", rateTalkHandler)
 	http.HandleFunc("/calificaciones-charla", talkRatingsHandler)
+	http.HandleFunc("/calificaciones-charla/", deleteTalkRatingHandler)
 	http.HandleFunc("/charlas", talksProxyHandler)
 	http.HandleFunc("/", homeHandler)
 

@@ -263,8 +263,18 @@ async function consumeAttendance() {
 }
 
 app.get("/pagos", requireAuth, async (req, res) => {
-  const rows = await payments.find({}).toArray();
+  const rows = await payments.find({}).sort({ student_id: 1 }).toArray();
   res.json(rows);
+});
+
+app.get("/verificar-pago/:student_id", async (req, res) => {
+  const payment = await payments.findOne({ student_id: req.params.student_id });
+  res.json({
+    student_id: req.params.student_id,
+    exists: Boolean(payment),
+    paid: Boolean(payment && payment.paid),
+    reason: !payment ? "No existe registro de pago" : (payment.paid ? "Pago verificado" : "El estudiante aparece como NO PAGADO")
+  });
 });
 
 app.get("/", (req, res) => {
