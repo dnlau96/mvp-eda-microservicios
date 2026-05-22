@@ -2,6 +2,8 @@
 
 Este playbook instala Docker en una maquina Ubuntu/Debian, copia el proyecto y levanta el MVP con Docker Compose.
 
+Para desplegar en Amazon EC2, usa la guia especifica: [AWS_EC2.md](AWS_EC2.md).
+
 ## 1. Requisitos
 
 En tu maquina local necesitas Ansible. En Windows, lo mas practico es usar WSL con Ubuntu.
