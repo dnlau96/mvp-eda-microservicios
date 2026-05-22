@@ -330,10 +330,38 @@ app.get("/verificar-pago/:student_id", async (req, res) => {
   const payment = await payments.findOne({ student_id: req.params.student_id });
   res.json({
     student_id: req.params.student_id,
+    carnet: req.params.student_id,
+    student_name: payment ? payment.student_name : "",
+    career: payment ? payment.career : "",
     exists: Boolean(payment),
     paid: Boolean(payment && payment.paid),
     reason: !payment ? "No existe registro de pago" : (payment.paid ? "Pago verificado" : "El estudiante aparece como NO PAGADO")
   });
+});
+
+app.get("/estudiantes-pagados", async (req, res) => {
+  const q = String(req.query.q || "").trim();
+  if (q.length < 2) {
+    res.json([]);
+    return;
+  }
+
+  const safe = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const rows = await payments.find({
+    paid: true,
+    $or: [
+      { student_id: { $regex: safe, $options: "i" } },
+      { student_name: { $regex: safe, $options: "i" } }
+    ]
+  }).sort({ student_id: 1 }).limit(10).toArray();
+
+  res.json(rows.map((row) => ({
+    student_id: row.student_id,
+    carnet: row.student_id,
+    student_name: row.student_name || "",
+    career: row.career || "",
+    paid: Boolean(row.paid)
+  })));
 });
 
 app.get("/", (req, res) => {

@@ -4,6 +4,7 @@ import threading
 import time
 import urllib.request
 import urllib.error
+import urllib.parse
 
 import pika
 import psycopg2
@@ -41,7 +42,7 @@ HTML = """
     .row-actions { display: flex; gap: 8px; }
     .row-actions button { width: auto; margin: 0; padding: 8px 10px; }
     .hidden { display: none; }
-    #message, #talkMessage { margin-top: 14px; padding: 10px; border-radius: 6px; display: none; }
+    #message, #talkMessage, #studentMessage { margin-top: 14px; padding: 10px; border-radius: 6px; display: none; }
     .ok { display: block !important; background: #dcfce7; color: #166534; }
     .error { display: block !important; background: #fee2e2; color: #991b1b; }
     table { width: 100%; border-collapse: collapse; margin-top: 12px; }
@@ -52,6 +53,9 @@ HTML = """
     .CANCELADO { background: #fee2e2; color: #991b1b; }
     .links { margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
     .links a { color: white; text-decoration: none; border: 1px solid rgba(255,255,255,.5); padding: 8px 10px; border-radius: 6px; }
+    .muted { color: #64748b; font-size: 13px; }
+    .result-list { display: grid; gap: 8px; margin-top: 10px; }
+    .result-list button { margin: 0; text-align: left; background: #ecfdf5; color: #14532d; border: 1px solid #bbf7d0; }
     @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -88,12 +92,17 @@ HTML = """
 
       <h2>Nueva asistencia</h2>
       <form id="form">
+        <label>Buscar estudiante pagado</label>
+        <input id="student_search" placeholder="Carnet o nombre" value="201544138" />
+        <button type="button" class="secondary" onclick="searchPaidStudents()">Buscar en Pagos</button>
+        <div id="studentMessage"></div>
+        <div id="studentResults" class="result-list"></div>
         <label>Carnet</label>
-        <input id="student_id" value="201544138" />
+        <input id="student_id" value="201544138" readonly />
         <label>Nombre</label>
-        <input id="student_name" value="Estudiante Ingenieria" />
+        <input id="student_name" value="Estudiante Ingenieria" readonly />
         <label>Carrera</label>
-        <select id="career">
+        <select id="career" disabled>
           <option>Ciencias y Sistemas</option>
           <option>Ingenieria Civil</option>
           <option>Ingenieria Industrial</option>
@@ -121,11 +130,64 @@ HTML = """
   </main>
   <script>
     function fillPending() {
-      student_id.value = "201544139";
-      student_name.value = "Estudiante Pendiente";
+      student_search.value = "201544139";
+      student_id.value = "";
+      student_name.value = "";
       career.value = "Ingenieria Civil";
       talk_id.value = "CIV-EST-001";
+      studentMessage.className = "error";
+      studentMessage.textContent = "Este carnet esta sembrado como NO PAGADO; al buscarlo no debe aparecer.";
+      studentResults.innerHTML = "";
     }
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[char]));
+    }
+    async function searchPaidStudents() {
+      const q = student_search.value.trim();
+      if (q.length < 2) {
+        studentMessage.className = "error";
+        studentMessage.textContent = "Escribe al menos 2 caracteres para buscar.";
+        studentResults.innerHTML = "";
+        return;
+      }
+      const response = await fetch("/estudiantes-pagados?q=" + encodeURIComponent(q));
+      const data = await response.json();
+      if (!response.ok) {
+        studentMessage.className = "error";
+        studentMessage.textContent = data.detail || "No se pudo consultar Pagos.";
+        studentResults.innerHTML = "";
+        return;
+      }
+      if (data.length === 0) {
+        studentMessage.className = "error";
+        studentMessage.textContent = "No se encontro un estudiante pagado con ese carnet o nombre.";
+        studentResults.innerHTML = "";
+        return;
+      }
+      studentMessage.className = "ok";
+      studentMessage.textContent = "Selecciona el estudiante para completar el registro.";
+      studentResults.innerHTML = data.map(x => `
+        <button type="button"
+          data-carnet="${escapeHtml(x.carnet)}"
+          data-name="${escapeHtml(x.student_name)}"
+          data-career="${escapeHtml(x.career)}">
+          ${escapeHtml(x.carnet)} - ${escapeHtml(x.student_name)}
+          <br><span class="muted">${escapeHtml(x.career)}</span>
+        </button>`).join("");
+    }
+    studentResults.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-carnet]");
+      if (!button) return;
+      student_id.value = button.dataset.carnet;
+      student_name.value = button.dataset.name;
+      career.value = button.dataset.career || "Ciencias y Sistemas";
+      student_search.value = button.dataset.carnet;
+      studentResults.innerHTML = "";
+      studentMessage.className = "ok";
+      studentMessage.textContent = "Datos cargados desde Pagos. Ya puedes registrar asistencia.";
+    });
     function toggleTalkForm() {
       talkPanel.classList.toggle("hidden");
     }
@@ -185,8 +247,6 @@ HTML = """
         body: JSON.stringify({
           student_id: student_id.value,
           carnet: student_id.value,
-          student_name: student_name.value,
-          career: career.value,
           talk_id: talk_id.value,
           talk_code: talk_id.value
         })
@@ -217,6 +277,7 @@ HTML = """
     });
     loadRows();
     loadTalks();
+    searchPaidStudents();
     setInterval(loadRows, 2500);
   </script>
 </body>
@@ -227,7 +288,7 @@ HTML = """
 class AttendanceIn(BaseModel):
     student_id: str | None = None
     carnet: str | None = None
-    student_name: str
+    student_name: str = ""
     career: str = "Ciencias y Sistemas"
     talk_id: str | None = None
     talk_code: str | None = None
@@ -379,6 +440,15 @@ def verify_payment(carnet):
     return payload
 
 
+def search_paid_students(q):
+    encoded = urllib.parse.quote(q)
+    try:
+        with urllib.request.urlopen(f"{PAGOS_URL}/estudiantes-pagados?q={encoded}", timeout=5) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=503, detail=f"No se pudo consultar estudiantes pagados: {exc}")
+
+
 def handle_payment_response(event_type, body):
     payload = json.loads(body)
     status = "APROBADO" if event_type == "PagoVerificado" else "CANCELADO"
@@ -425,7 +495,9 @@ def register_attendance(data: AttendanceIn):
     if not carnet or not talk_code:
         raise HTTPException(status_code=400, detail="carnet y talk_code son obligatorios")
 
-    verify_payment(carnet)
+    payment = verify_payment(carnet)
+    paid_name = payment.get("student_name") or data.student_name
+    paid_career = payment.get("career") or data.career
 
     with get_db() as conn:
         with conn.cursor() as cur:
@@ -458,7 +530,7 @@ def register_attendance(data: AttendanceIn):
                     VALUES (%s, %s, %s, %s, %s, 'PENDIENTE')
                     RETURNING id, status
                     """,
-                    (carnet, data.student_name, data.career, talk_code, talk_title),
+                    (carnet, paid_name, paid_career, talk_code, talk_title),
                 )
             except psycopg2.IntegrityError:
                 raise HTTPException(
@@ -471,8 +543,8 @@ def register_attendance(data: AttendanceIn):
         "attendance_id": attendance_id,
         "student_id": carnet,
         "carnet": carnet,
-        "student_name": data.student_name,
-        "career": data.career,
+        "student_name": paid_name,
+        "career": paid_career,
         "talk_id": talk_code,
         "talk_code": talk_code,
         "talk_title": talk_title,
@@ -480,6 +552,13 @@ def register_attendance(data: AttendanceIn):
     }
     publish_event("AsistenciaRegistrada", event)
     return {"attendance_id": attendance_id, "status": status, "event": "AsistenciaRegistrada"}
+
+
+@app.get("/estudiantes-pagados")
+def paid_students(q: str = ""):
+    if len(q.strip()) < 2:
+        return []
+    return search_paid_students(q.strip())
 
 
 @app.post("/calificar-charla")
