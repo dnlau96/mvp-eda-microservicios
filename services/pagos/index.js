@@ -12,6 +12,10 @@ const EXCHANGE = "mvp_eventos";
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+app.use((req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  next();
+});
 
 let payments;
 let channel;
@@ -36,6 +40,9 @@ const html = `<!doctype html>
     .row-actions { display: flex; gap: 8px; }
     .row-actions button { width: auto; margin: 0; padding: 8px 10px; }
     .notice { margin-top: 12px; padding: 10px; border-radius: 6px; background: #eef2ff; color: #312e81; }
+    #status { margin-top: 12px; padding: 10px; border-radius: 6px; display: none; }
+    #status.ok { display: block; background: #dcfce7; color: #166534; }
+    #status.error { display: block; background: #fee2e2; color: #991b1b; }
     table { width: 100%; border-collapse: collapse; margin-top: 12px; }
     th, td { padding: 10px; border-bottom: 1px solid #ebe7f3; text-align: left; }
     .yes { color: #166534; font-weight: 700; }
@@ -77,6 +84,7 @@ const html = `<!doctype html>
         </select>
         <button>Guardar en MongoDB</button>
       </form>
+      <div id="status"></div>
       <form method="post" action="/logout">
         <button class="secondary">Cerrar sesion</button>
       </form>
@@ -90,45 +98,96 @@ const html = `<!doctype html>
     </section>
   </main>
   <script>
+    const rowsEl = document.getElementById("rows");
+    const formEl = document.getElementById("form");
+    const statusEl = document.getElementById("status");
+    const studentIdEl = document.getElementById("student_id");
+    const studentNameEl = document.getElementById("student_name");
+    const careerEl = document.getElementById("career");
+    const paidEl = document.getElementById("paid");
+
+    function showStatus(kind, text) {
+      statusEl.className = kind;
+      statusEl.textContent = text;
+    }
+
     async function loadRows() {
-      const data = await fetch("/pagos").then(r => r.json());
-      rows.innerHTML = data.map(x =>
+      try {
+        const response = await fetch("/pagos", {
+          credentials: "same-origin",
+          cache: "no-store"
+        });
+        if (response.status === 401) {
+          window.location.href = "/";
+          return;
+        }
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        const data = await response.json();
+        rowsEl.innerHTML = data.map(x =>
         "<tr>" +
         "<td>" + x.student_id + "</td>" +
         "<td>" + (x.student_name || "") + "</td>" +
         "<td>" + (x.career || "") + "</td>" +
         "<td class='" + (x.paid ? "yes" : "no") + "'>" + (x.paid ? "PAGADO" : "NO PAGADO") + "</td>" +
         "<td><div class='row-actions'>" +
-        "<button type='button' onclick='editPayment(" + JSON.stringify(x) + ")'>Editar</button>" +
-        "<button type='button' class='danger' onclick='deletePayment(\"" + x.student_id + "\")'>Eliminar</button>" +
+        "<button type='button' data-edit='" + encodeURIComponent(JSON.stringify(x)) + "'>Editar</button>" +
+        "<button type='button' class='danger' data-delete='" + encodeURIComponent(x.student_id) + "'>Eliminar</button>" +
         "</div></td>" +
         "</tr>"
       ).join("");
+        if (data.length === 0) {
+          rowsEl.innerHTML = "<tr><td colspan='5'>No hay pagos registrados en MongoDB.</td></tr>";
+        }
+        showStatus("ok", "Pagos cargados: " + data.length);
+      } catch (err) {
+        rowsEl.innerHTML = "<tr><td colspan='5'>No se pudieron cargar los pagos.</td></tr>";
+        showStatus("error", "Error cargando pagos: " + err.message);
+      }
     }
     function editPayment(row) {
-      student_id.value = row.student_id || "";
-      student_name.value = row.student_name || "";
-      career.value = row.career || "Ciencias y Sistemas";
-      paid.value = row.paid ? "true" : "false";
+      studentIdEl.value = row.student_id || "";
+      studentNameEl.value = row.student_name || "";
+      careerEl.value = row.career || "Ciencias y Sistemas";
+      paidEl.value = row.paid ? "true" : "false";
     }
     async function deletePayment(carnet) {
       if (!confirm("Eliminar pago del carnet " + carnet + "?")) return;
-      await fetch("/pagos/" + encodeURIComponent(carnet), { method: "DELETE" });
+      const response = await fetch("/pagos/" + encodeURIComponent(carnet), {
+        method: "DELETE",
+        credentials: "same-origin"
+      });
+      if (!response.ok) {
+        showStatus("error", "No se pudo eliminar el pago");
+        return;
+      }
+      showStatus("ok", "Pago eliminado");
       loadRows();
     }
-    form.addEventListener("submit", async (event) => {
+    rowsEl.addEventListener("click", (event) => {
+      const editData = event.target.getAttribute("data-edit");
+      const deleteData = event.target.getAttribute("data-delete");
+      if (editData) editPayment(JSON.parse(decodeURIComponent(editData)));
+      if (deleteData) deletePayment(decodeURIComponent(deleteData));
+    });
+    formEl.addEventListener("submit", async (event) => {
       event.preventDefault();
-      await fetch("/pagos", {
+      const response = await fetch("/pagos", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          student_id: student_id.value,
-          carnet: student_id.value,
-          student_name: student_name.value,
-          career: career.value,
-          paid: paid.value === "true"
+          student_id: studentIdEl.value,
+          carnet: studentIdEl.value,
+          student_name: studentNameEl.value,
+          career: careerEl.value,
+          paid: paidEl.value === "true"
         })
       });
+      if (!response.ok) {
+        showStatus("error", "No se pudo guardar el pago");
+        return;
+      }
+      showStatus("ok", "Pago guardado en MongoDB");
       loadRows();
     });
     loadRows();
