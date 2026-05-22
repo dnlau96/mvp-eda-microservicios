@@ -30,11 +30,12 @@ HTML = """
     section { background: white; border: 1px solid #d9dee8; border-radius: 8px; padding: 20px; }
     h1, h2 { margin: 0 0 10px; }
     label { display: block; margin: 14px 0 6px; font-weight: 700; }
-    input { box-sizing: border-box; width: 100%; padding: 11px; border: 1px solid #c6ccda; border-radius: 6px; }
+    input, select, textarea { box-sizing: border-box; width: 100%; padding: 11px; border: 1px solid #c6ccda; border-radius: 6px; }
+    textarea { min-height: 74px; resize: vertical; }
     button { margin-top: 16px; width: 100%; padding: 12px; border: 0; border-radius: 6px; background: #0f766e; color: white; font-weight: 700; cursor: pointer; }
-    #message { margin-top: 14px; padding: 10px; border-radius: 6px; display: none; }
-    #message.ok { display: block; background: #dcfce7; color: #166534; }
-    #message.error { display: block; background: #fee2e2; color: #991b1b; }
+    #message, #ratingMessage { margin-top: 14px; padding: 10px; border-radius: 6px; display: none; }
+    .ok { display: block !important; background: #dcfce7; color: #166534; }
+    .error { display: block !important; background: #fee2e2; color: #991b1b; }
     table { width: 100%; border-collapse: collapse; margin-top: 12px; }
     th, td { padding: 10px; border-bottom: 1px solid #e5e9f2; text-align: left; }
     .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
@@ -65,12 +66,11 @@ HTML = """
         <label>Nombre</label>
         <input id="student_name" value="Estudiante Ingenieria" />
         <label>Carrera</label>
-        <input id="career" list="careers" value="Ciencias y Sistemas" />
-        <datalist id="careers">
-          <option value="Ingenieria Civil"></option>
-          <option value="Ingenieria Industrial"></option>
-          <option value="Ciencias y Sistemas"></option>
-        </datalist>
+        <select id="career">
+          <option>Ciencias y Sistemas</option>
+          <option>Ingenieria Civil</option>
+          <option>Ingenieria Industrial</option>
+        </select>
         <label>Codigo de charla</label>
         <input id="talk_id" value="SIS-EDA-001" />
         <label>Titulo de charla</label>
@@ -79,12 +79,36 @@ HTML = """
       </form>
       <div id="message"></div>
       <button type="button" onclick="fillPending()">Usar estudiante sin pago</button>
+      <h2 style="margin-top:24px">Calificar charla</h2>
+      <form id="ratingForm">
+        <label>Carnet</label>
+        <input id="rating_carnet" value="201544138" />
+        <label>Codigo de charla</label>
+        <input id="rating_talk_code" value="SIS-EDA-001" />
+        <label>Puntuacion</label>
+        <select id="rating_value">
+          <option value="5">5 - Excelente</option>
+          <option value="4">4 - Muy buena</option>
+          <option value="3">3 - Buena</option>
+          <option value="2">2 - Regular</option>
+          <option value="1">1 - Mala</option>
+        </select>
+        <label>Comentario</label>
+        <textarea id="rating_comment">Excelente charla</textarea>
+        <button>Enviar calificacion</button>
+      </form>
+      <div id="ratingMessage"></div>
     </section>
     <section>
       <h2>Asistencias</h2>
       <table>
         <thead><tr><th>ID</th><th>Carnet</th><th>Carrera</th><th>Charla</th><th>Estado</th></tr></thead>
         <tbody id="rows"></tbody>
+      </table>
+      <h2 style="margin-top:24px">Calificaciones de charlas</h2>
+      <table>
+        <thead><tr><th>Carnet</th><th>Charla</th><th>Nota</th><th>Comentario</th></tr></thead>
+        <tbody id="ratingRows"></tbody>
       </table>
     </section>
   </main>
@@ -95,6 +119,8 @@ HTML = """
       career.value = "Ingenieria Civil";
       talk_id.value = "CIV-EST-001";
       talk_title.value = "Estructuras y gestion de obra";
+      rating_carnet.value = student_id.value;
+      rating_talk_code.value = talk_id.value;
     }
     async function loadRows() {
       const data = await fetch("/asistencias").then(r => r.json());
@@ -105,6 +131,16 @@ HTML = """
           <td>${x.career}</td>
           <td>${x.talk_code}<br><small>${x.talk_title}</small></td>
           <td><span class="pill ${x.status}">${x.status}</span></td>
+        </tr>`).join("");
+    }
+    async function loadRatings() {
+      const data = await fetch("/calificaciones-charla").then(r => r.json());
+      ratingRows.innerHTML = data.map(x => `
+        <tr>
+          <td>${x.carnet}</td>
+          <td>${x.talk_code}</td>
+          <td>${x.rating}/5</td>
+          <td>${x.comment || ""}</td>
         </tr>`).join("");
     }
     form.addEventListener("submit", async (event) => {
@@ -130,7 +166,27 @@ HTML = """
       setTimeout(loadRows, 1200);
       loadRows();
     });
+    ratingForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const response = await fetch("/calificar-charla", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          carnet: rating_carnet.value,
+          talk_code: rating_talk_code.value,
+          rating: Number(rating_value.value),
+          comment: rating_comment.value
+        })
+      });
+      const result = await response.json();
+      ratingMessage.className = response.ok ? "ok" : "error";
+      ratingMessage.textContent = response.ok
+        ? "Calificacion guardada"
+        : (result.detail || "No se pudo guardar la calificacion");
+      loadRatings();
+    });
     loadRows();
+    loadRatings();
     setInterval(loadRows, 2500);
   </script>
 </body>
@@ -146,6 +202,13 @@ class AttendanceIn(BaseModel):
     talk_id: str | None = None
     talk_code: str | None = None
     talk_title: str = "Arquitecturas Dirigidas por Eventos"
+
+
+class TalkRatingIn(BaseModel):
+    carnet: str
+    talk_code: str
+    rating: int
+    comment: str = ""
 
 
 def wait_for_postgres():
@@ -180,6 +243,18 @@ def init_db():
                 )
                 """
             )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS talk_ratings (
+                  id SERIAL PRIMARY KEY,
+                  student_id VARCHAR(50) NOT NULL,
+                  talk_id VARCHAR(50) NOT NULL,
+                  rating INT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+                  comment VARCHAR(255),
+                  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+                """
+            )
             cur.execute("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS career VARCHAR(80) NOT NULL DEFAULT 'Ciencias y Sistemas'")
             cur.execute("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS talk_title VARCHAR(160) NOT NULL DEFAULT 'Arquitecturas Dirigidas por Eventos'")
 
@@ -192,9 +267,28 @@ def init_db():
                     ON attendance (student_id, talk_id)
                     """
                 )
+                cur.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS ux_talk_ratings_student_talk
+                    ON talk_ratings (student_id, talk_id)
+                    """
+                )
             except Exception as exc:
                 conn.rollback()
                 print(f"No se pudo crear indice unico por datos existentes duplicados: {exc}")
+
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            try:
+                cur.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS ux_talk_ratings_student_talk
+                    ON talk_ratings (student_id, talk_id)
+                    """
+                )
+            except Exception as exc:
+                conn.rollback()
+                print(f"No se pudo crear indice unico de calificaciones: {exc}")
 
 
 def rabbit_channel():
@@ -308,6 +402,55 @@ def register_attendance(data: AttendanceIn):
     return {"attendance_id": attendance_id, "status": status, "event": "AsistenciaRegistrada"}
 
 
+@app.post("/calificar-charla")
+def rate_talk(data: TalkRatingIn):
+    if data.rating < 1 or data.rating > 5:
+        raise HTTPException(status_code=400, detail="rating debe estar entre 1 y 5")
+
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id FROM attendance
+                WHERE student_id = %s AND talk_id = %s AND status = 'APROBADO'
+                LIMIT 1
+                """,
+                (data.carnet, data.talk_code),
+            )
+            if not cur.fetchone():
+                raise HTTPException(
+                    status_code=400,
+                    detail="Solo se puede calificar una charla si el carnet tiene asistencia APROBADA",
+                )
+            cur.execute(
+                "SELECT id FROM talk_ratings WHERE student_id = %s AND talk_id = %s LIMIT 1",
+                (data.carnet, data.talk_code),
+            )
+            existing = cur.fetchone()
+            if existing:
+                rating_id = existing[0]
+                cur.execute(
+                    """
+                    UPDATE talk_ratings
+                    SET rating = %s, comment = %s, created_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (data.rating, data.comment, rating_id),
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO talk_ratings (student_id, talk_id, rating, comment)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (data.carnet, data.talk_code, data.rating, data.comment),
+                )
+                rating_id = cur.fetchone()[0]
+
+    return {"ok": True, "rating_id": rating_id}
+
+
 @app.get("/", response_class=HTMLResponse)
 def home():
     return HTML
@@ -333,6 +476,33 @@ def list_attendance():
             "talk_title": row[5],
             "status": row[6],
             "created_at": row[7].isoformat(),
+        }
+        for row in rows
+    ]
+
+
+@app.get("/calificaciones-charla")
+def list_talk_ratings():
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT student_id, talk_id, rating, comment, created_at
+                FROM talk_ratings
+                ORDER BY created_at DESC
+                LIMIT 100
+                """
+            )
+            rows = cur.fetchall()
+    return [
+        {
+            "carnet": row[0],
+            "student_id": row[0],
+            "talk_code": row[1],
+            "talk_id": row[1],
+            "rating": row[2],
+            "comment": row[3],
+            "created_at": row[4].isoformat(),
         }
         for row in rows
     ]

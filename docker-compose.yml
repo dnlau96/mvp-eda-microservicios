@@ -83,6 +83,9 @@ services:
     environment:
       MONGO_URL: mongodb://mongo:27017/pagos_db
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      PAGOS_ADMIN_USER: admin
+      PAGOS_ADMIN_PASSWORD: admin123
+      PAGOS_ADMIN_TOKEN: pagos-admin-token
     ports:
       - "8002:3000"
     depends_on:

@@ -96,22 +96,34 @@ Ver panel de aprobados:
 curl http://localhost:8003/panel
 ```
 
-Calificar charla:
+Calificar charla desde el microservicio de Asistencia:
 
 ```cmd
-curl -X POST http://localhost:8003/calificar -H "Content-Type: application/json" -d "{\"carnet\":\"201544138\",\"talk_code\":\"SIS-EDA-001\",\"reviewer_type\":\"ESTUDIANTE\",\"rating\":5,\"comment\":\"Excelente charla\"}"
+curl -X POST http://localhost:8001/calificar-charla -H "Content-Type: application/json" -d "{\"carnet\":\"201544138\",\"talk_code\":\"SIS-EDA-001\",\"rating\":5,\"comment\":\"Excelente charla\"}"
 ```
 
-Calificacion del profesor al estudiante:
+Ver calificaciones de charlas:
 
 ```cmd
-curl -X POST http://localhost:8003/calificar -H "Content-Type: application/json" -d "{\"carnet\":\"201544138\",\"talk_code\":\"SIS-EDA-001\",\"reviewer_type\":\"PROFESOR\",\"rating\":5,\"comment\":\"Participacion sobresaliente\"}"
+curl http://localhost:8001/calificaciones-charla
 ```
 
-Ver calificaciones:
+Filtrar panel de profesores por charla:
 
 ```cmd
-curl http://localhost:8003/calificaciones
+curl "http://localhost:8003/panel?talk_code=SIS-EDA-001&limit=50"
 ```
 
 Nota: MySQL queda expuesto en `localhost:3307` para evitar conflictos con instalaciones locales en `3306`.
+
+## Pagos administrativos
+
+El microservicio de Pagos esta protegido con login para que un estudiante no pueda marcarse como pagado.
+
+```text
+http://localhost:8002
+usuario: admin
+password: admin123
+```
+
+Desde esa pantalla se puede crear, editar o eliminar pagos.

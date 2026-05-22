@@ -10,7 +10,7 @@ Demostrar una arquitectura de microservicios poliglota con comunicacion basada e
 | --- | --- | --- | --- | --- |
 | Asistencia | Python + FastAPI | PostgreSQL | 8001 | Registra asistencia por carnet y charla. |
 | Pagos | Node.js + Express | MongoDB | 8002 | Verifica si el carnet tiene pago activo. |
-| Panel | Go | MySQL | 8003 | Replica aprobados y registra calificaciones. |
+| Panel | Go | MySQL | 8003 | Replica aprobados y permite consulta filtrada para profesores. |
 
 Servicio de soporte:
 
@@ -41,7 +41,8 @@ Eventos principales:
 6. Pagos publica `PagoVerificado` o `PagoRechazado`.
 7. Asistencia actualiza el estado a `APROBADO` o `CANCELADO`.
 8. Panel escucha `PagoVerificado` y replica el registro aprobado en MySQL.
-9. Panel permite calificar solo si el carnet tiene asistencia aprobada para esa charla.
+9. El estudiante califica la charla desde Asistencia solo si tiene estado `APROBADO`.
+10. El Panel permite a profesores consultar asistentes por charla, carrera, carnet o nombre.
 
 ## Persistencia y consistencia
 
@@ -73,6 +74,8 @@ Este es un prototipo local, no una configuracion productiva. Aun asi, se aplican
 - Servicios aislados por red interna de Docker Compose.
 - Endpoints de escritura con validaciones de dominio.
 - Validacion de duplicados para integridad de datos.
+- Login administrativo en Pagos para evitar que estudiantes modifiquen pagos.
+- Filtros y limites de consulta en Panel para manejar grupos grandes.
 - Separacion de bases de datos por microservicio.
 
 Mejoras recomendadas para produccion:
@@ -134,13 +137,14 @@ La carpeta `ansible/` incluye:
 ```text
 POST /asistencia
 GET  /asistencias
+POST /calificar-charla
+GET  /calificaciones-charla
 
 GET  /pagos
 POST /pagos
+DELETE /pagos/:student_id
 
 GET  /panel
-POST /calificar
-GET  /calificaciones
 ```
 
 ## Caso de prueba principal

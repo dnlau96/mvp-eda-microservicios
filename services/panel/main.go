@@ -46,25 +46,25 @@ const html = `<!doctype html>
   <style>
     body { margin: 0; font-family: Arial, sans-serif; background: #f5f8f6; color: #172018; }
     header { background: #166534; color: white; padding: 28px 36px; }
-    main { max-width: 1120px; margin: 28px auto; padding: 0 20px; display: grid; grid-template-columns: 1.2fr .8fr; gap: 20px; }
+    main { max-width: 1120px; margin: 28px auto; padding: 0 20px; }
+    .filters { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: 12px; align-items: end; }
     section { background: white; border: 1px solid #d8e5dc; border-radius: 8px; padding: 20px; }
     h1, h2 { margin: 0 0 10px; }
     label { display: block; margin: 14px 0 6px; font-weight: 700; }
-    input, textarea { box-sizing: border-box; width: 100%; padding: 11px; border: 1px solid #bdd0c3; border-radius: 6px; }
-    textarea { min-height: 72px; resize: vertical; }
-    button { margin-top: 16px; width: 100%; padding: 12px; border: 0; border-radius: 6px; background: #166534; color: white; font-weight: 700; cursor: pointer; }
+    input, select { box-sizing: border-box; width: 100%; padding: 11px; border: 1px solid #bdd0c3; border-radius: 6px; }
+    button { width: 100%; padding: 12px; border: 0; border-radius: 6px; background: #166534; color: white; font-weight: 700; cursor: pointer; }
     table { width: 100%; border-collapse: collapse; margin-top: 12px; }
     th, td { padding: 10px; border-bottom: 1px solid #e5eee8; text-align: left; }
     .tag { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #dcfce7; color: #166534; font-size: 12px; font-weight: 700; }
     .links { margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
     .links a { color: white; text-decoration: none; border: 1px solid rgba(255,255,255,.5); padding: 8px 10px; border-radius: 6px; }
-    @media (max-width: 880px) { main { grid-template-columns: 1fr; } }
+    @media (max-width: 880px) { .filters { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <header>
     <h1>Panel de Profesores y Calidad</h1>
-    <p>Recibe PagoVerificado, muestra asistentes aprobados y registra calificaciones solo si el carnet asistio a esa charla.</p>
+    <p>Consulta asistentes aprobados por charla, carrera, carnet o nombre para manejo de grupos grandes.</p>
     <div class="links">
       <a href="http://localhost:8001">Asistencia</a>
       <a href="http://localhost:8002">Pagos</a>
@@ -73,41 +73,51 @@ const html = `<!doctype html>
   </header>
   <main>
     <section>
-      <h2>Estudiantes aprobados en la charla</h2>
+      <h2>Filtros</h2>
+      <form id="filters" class="filters">
+        <div>
+          <label>Codigo de charla</label>
+          <input id="talk_code" placeholder="SIS-EDA-001" />
+        </div>
+        <div>
+          <label>Carrera</label>
+          <select id="career">
+            <option value="">Todas</option>
+            <option>Ciencias y Sistemas</option>
+            <option>Ingenieria Civil</option>
+            <option>Ingenieria Industrial</option>
+          </select>
+        </div>
+        <div>
+          <label>Buscar carnet o nombre</label>
+          <input id="q" placeholder="201544138 o nombre" />
+        </div>
+        <div>
+          <label>Limite</label>
+          <select id="limit">
+            <option>50</option>
+            <option>100</option>
+            <option>200</option>
+            <option>400</option>
+          </select>
+        </div>
+        <button>Buscar asistentes</button>
+      </form>
+      <h2 style="margin-top:24px">Estudiantes aprobados</h2>
       <table>
         <thead><tr><th>Asistencia</th><th>Carnet</th><th>Carrera</th><th>Charla</th><th>Estado</th></tr></thead>
         <tbody id="approved"></tbody>
       </table>
     </section>
-    <section>
-      <h2>Calificar charla</h2>
-      <form id="form">
-        <label>Carnet</label>
-        <input id="student_id" value="201544138" />
-        <label>Codigo de charla</label>
-        <input id="talk_id" value="SIS-EDA-001" />
-        <label>Quien califica</label>
-        <input id="reviewer_type" list="reviewers" value="ESTUDIANTE" />
-        <datalist id="reviewers">
-          <option value="ESTUDIANTE"></option>
-          <option value="PROFESOR"></option>
-        </datalist>
-        <label>Nota</label>
-        <input id="rating" type="number" min="1" max="5" value="5" />
-        <label>Comentario</label>
-        <textarea id="comment">Excelente</textarea>
-        <button>Guardar calificacion</button>
-      </form>
-      <h2 style="margin-top:24px">Ultimas calificaciones</h2>
-      <table>
-        <thead><tr><th>Carnet</th><th>Tipo</th><th>Nota</th><th>Comentario</th></tr></thead>
-        <tbody id="ratings"></tbody>
-      </table>
-    </section>
   </main>
   <script>
     async function loadApproved() {
-      const data = await fetch("/panel").then(r => r.json());
+      const params = new URLSearchParams();
+      if (talk_code.value) params.set("talk_code", talk_code.value);
+      if (career.value) params.set("career", career.value);
+      if (q.value) params.set("q", q.value);
+      params.set("limit", limit.value);
+      const data = await fetch("/panel?" + params.toString()).then(r => r.json());
       approved.innerHTML = data.map(x =>
         "<tr>" +
         "<td>#" + x.attendance_id + "</td>" +
@@ -118,36 +128,11 @@ const html = `<!doctype html>
         "</tr>"
       ).join("");
     }
-    async function loadRatings() {
-      const data = await fetch("/calificaciones").then(r => r.json());
-      ratings.innerHTML = data.map(x =>
-        "<tr>" +
-        "<td>" + x.student_id + "</td>" +
-        "<td>" + x.reviewer_type + "</td>" +
-        "<td>" + x.rating + "/5</td>" +
-        "<td>" + (x.comment || "") + "</td>" +
-        "</tr>"
-      ).join("");
-    }
-    form.addEventListener("submit", async (event) => {
+    filters.addEventListener("submit", async (event) => {
       event.preventDefault();
-      await fetch("/calificar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          student_id: student_id.value,
-          carnet: student_id.value,
-          talk_id: talk_id.value,
-          talk_code: talk_id.value,
-          reviewer_type: reviewer_type.value,
-          rating: Number(rating.value),
-          comment: comment.value
-        })
-      });
-      loadRatings();
+      loadApproved();
     });
     loadApproved();
-    loadRatings();
     setInterval(loadApproved, 2500);
   </script>
 </body>
@@ -283,8 +268,36 @@ func consumeVerifiedPayments(rabbitURL string) {
 }
 
 func panelHandler(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query(`SELECT attendance_id, student_id, student_name, career, talk_id, talk_title, created_at
-		FROM approved_attendance ORDER BY id DESC`)
+	query := `SELECT a.attendance_id, a.student_id, a.student_name, a.career, a.talk_id, a.talk_title, a.created_at
+		FROM approved_attendance a
+		INNER JOIN (
+			SELECT MAX(id) AS id
+			FROM approved_attendance
+			GROUP BY student_id, talk_id
+		) latest ON latest.id = a.id
+		WHERE 1=1`
+	args := []any{}
+	params := r.URL.Query()
+	if talkCode := params.Get("talk_code"); talkCode != "" {
+		query += " AND a.talk_id = ?"
+		args = append(args, talkCode)
+	}
+	if career := params.Get("career"); career != "" {
+		query += " AND a.career = ?"
+		args = append(args, career)
+	}
+	if q := params.Get("q"); q != "" {
+		query += " AND (a.student_id LIKE ? OR a.student_name LIKE ?)"
+		like := "%" + q + "%"
+		args = append(args, like, like)
+	}
+	limit := params.Get("limit")
+	if limit != "100" && limit != "200" && limit != "400" {
+		limit = "50"
+	}
+	query += " ORDER BY a.id DESC LIMIT " + limit
+
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
