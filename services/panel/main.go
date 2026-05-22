@@ -46,6 +46,10 @@ type TalkRating struct {
 
 var db *sql.DB
 
+var professorUser string
+var professorPassword string
+var professorToken string
+
 const html = `<!doctype html>
 <html lang="es">
 <head>
@@ -71,6 +75,8 @@ const html = `<!doctype html>
     .tag { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #dcfce7; color: #166534; font-size: 12px; font-weight: 700; }
     .links { margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
     .links a { color: white; text-decoration: none; border: 1px solid rgba(255,255,255,.5); padding: 8px 10px; border-radius: 6px; }
+    .logout { margin-top: 12px; }
+    .logout button { width: auto; border: 1px solid rgba(255,255,255,.5); background: transparent; padding: 8px 10px; }
     @media (max-width: 880px) { main, .filters { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -83,6 +89,9 @@ const html = `<!doctype html>
       <a href="http://localhost:8002">Pagos</a>
       <a href="http://localhost:15672">RabbitMQ</a>
     </div>
+    <form class="logout" method="post" action="/logout">
+      <button>Cerrar sesion</button>
+    </form>
   </header>
   <main>
     <section>
@@ -235,12 +244,99 @@ const html = `<!doctype html>
 </body>
 </html>`
 
+const loginHTML = `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Login Profesores</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: Arial, sans-serif; background: #f5f8f6; color: #172018; }
+    section { width: min(380px, calc(100vw - 32px)); background: white; border: 1px solid #d8e5dc; border-radius: 8px; padding: 24px; }
+    h1 { margin: 0 0 8px; }
+    label { display: block; margin: 14px 0 6px; font-weight: 700; }
+    input { box-sizing: border-box; width: 100%; padding: 11px; border: 1px solid #bdd0c3; border-radius: 6px; }
+    button { margin-top: 16px; width: 100%; padding: 12px; border: 0; border-radius: 6px; background: #166534; color: white; font-weight: 700; cursor: pointer; }
+    .hint { color: #475569; }
+  </style>
+</head>
+<body>
+  <section>
+    <h1>Panel de profesores</h1>
+    <p class="hint">Inicia sesion para consultar asistentes y calificar charlas.</p>
+    <form method="post" action="/login">
+      <label>Usuario</label>
+      <input name="username" />
+      <label>Password</label>
+      <input name="password" type="password" />
+      <button>Entrar</button>
+    </form>
+  </section>
+</body>
+</html>`
+
 func env(key, fallback string) string {
 	value := os.Getenv(key)
 	if value == "" {
 		return fallback
 	}
 	return value
+}
+
+func isAuthenticated(r *http.Request) bool {
+	cookie, err := r.Cookie("profesor_session")
+	return err == nil && cookie.Value == professorToken
+}
+
+func requireAuth(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !isAuthenticated(r) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]any{"error": "No autorizado"})
+			return
+		}
+		handler(w, r)
+	}
+}
+
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if r.FormValue("username") != professorUser || r.FormValue("password") != professorPassword {
+		http.Error(w, "Credenciales invalidas", http.StatusUnauthorized)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "profesor_session",
+		Value:    professorToken,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func logoutHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "profesor_session",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func waitForMySQL(dsn string) {
@@ -611,25 +707,34 @@ func talksProxyHandler(w http.ResponseWriter, r *http.Request) {
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if !isAuthenticated(r) {
+		w.Write([]byte(loginHTML))
+		return
+	}
 	w.Write([]byte(html))
 }
 
 func main() {
 	dsn := env("MYSQL_DSN", "panel:panel@tcp(localhost:3306)/panel_db?parseTime=true")
 	rabbitURL := env("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
+	professorUser = env("PROFESORES_USER", "profesor")
+	professorPassword = env("PROFESORES_PASSWORD", "profesor123")
+	professorToken = env("PROFESORES_TOKEN", "profesores-demo-token")
 
 	waitForMySQL(dsn)
 	initDB()
 	go consumeVerifiedPayments(rabbitURL)
 
-	http.HandleFunc("/panel", panelHandler)
-	http.HandleFunc("/panel/", deleteApprovedHandler)
-	http.HandleFunc("/calificar", rateHandler)
-	http.HandleFunc("/calificaciones", ratingsHandler)
-	http.HandleFunc("/calificar-charla", rateTalkHandler)
-	http.HandleFunc("/calificaciones-charla", talkRatingsHandler)
-	http.HandleFunc("/calificaciones-charla/", deleteTalkRatingHandler)
-	http.HandleFunc("/charlas", talksProxyHandler)
+	http.HandleFunc("/login", loginHandler)
+	http.HandleFunc("/logout", logoutHandler)
+	http.HandleFunc("/panel", requireAuth(panelHandler))
+	http.HandleFunc("/panel/", requireAuth(deleteApprovedHandler))
+	http.HandleFunc("/calificar", requireAuth(rateHandler))
+	http.HandleFunc("/calificaciones", requireAuth(ratingsHandler))
+	http.HandleFunc("/calificar-charla", requireAuth(rateTalkHandler))
+	http.HandleFunc("/calificaciones-charla", requireAuth(talkRatingsHandler))
+	http.HandleFunc("/calificaciones-charla/", requireAuth(deleteTalkRatingHandler))
+	http.HandleFunc("/charlas", requireAuth(talksProxyHandler))
 	http.HandleFunc("/", homeHandler)
 
 	log.Println("Panel service en :8080")

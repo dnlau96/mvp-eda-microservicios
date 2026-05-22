@@ -101,6 +101,9 @@ services:
       MYSQL_DSN: panel:panel@tcp(mysql:3306)/panel_db?parseTime=true
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       ASISTENCIA_URL: http://asistencia-service:8000
+      PROFESORES_USER: profesor
+      PROFESORES_PASSWORD: profesor123
+      PROFESORES_TOKEN: profesores-demo-token
     ports:
       - "8003:8080"
     depends_on:

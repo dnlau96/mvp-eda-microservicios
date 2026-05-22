@@ -112,7 +112,6 @@ HTML = """
         <button>Registrar y publicar evento</button>
       </form>
       <div id="message"></div>
-      <button type="button" onclick="fillPending()">Usar estudiante sin pago</button>
     </section>
     <section>
       <h2>Asistencias</h2>
@@ -129,16 +128,6 @@ HTML = """
     </section>
   </main>
   <script>
-    function fillPending() {
-      student_search.value = "201544139";
-      student_id.value = "";
-      student_name.value = "";
-      career.value = "Ingenieria Civil";
-      talk_id.value = "CIV-EST-001";
-      studentMessage.className = "error";
-      studentMessage.textContent = "Este carnet esta sembrado como NO PAGADO; al buscarlo no debe aparecer.";
-      studentResults.innerHTML = "";
-    }
     function escapeHtml(value) {
       return String(value || "").replace(/[&<>"']/g, (char) => ({
         "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
