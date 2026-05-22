@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS approved_attendance (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  attendance_id INT NOT NULL,
+  student_id VARCHAR(50) NOT NULL,
+  student_name VARCHAR(120) NOT NULL,
+  career VARCHAR(80) NOT NULL DEFAULT 'Ciencias y Sistemas',
+  talk_id VARCHAR(50) NOT NULL,
+  talk_title VARCHAR(160) NOT NULL DEFAULT 'Arquitecturas Dirigidas por Eventos',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ratings (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  student_id VARCHAR(50) NOT NULL,
+  talk_id VARCHAR(50) NOT NULL,
+  reviewer_type VARCHAR(20) NOT NULL DEFAULT 'ESTUDIANTE',
+  rating INT NOT NULL,
+  comment VARCHAR(255),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

@@ -1,0 +1,11 @@
+---
+- name: Detener MVP EDA
+  hosts: demo
+  become: true
+
+  tasks:
+    - name: Detener servicios Docker Compose
+      ansible.builtin.command: docker compose -p "{{ compose_project_name | default('mvp_eda') }}" down
+      args:
+        chdir: "{{ deploy_path | default('/opt/mvp-eda') }}"
+      changed_when: true

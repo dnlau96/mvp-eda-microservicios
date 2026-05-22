@@ -1,0 +1,102 @@
+{
+  "realm": "mvp-eda",
+  "enabled": true,
+  "displayName": "MVP EDA Universidad",
+  "roles": {
+    "realm": [
+      {
+        "name": "student",
+        "description": "Estudiante que registra asistencia y califica charlas"
+      },
+      {
+        "name": "teacher",
+        "description": "Profesor que puede calificar estudiantes"
+      },
+      {
+        "name": "admin",
+        "description": "Administrador del ecosistema"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "mvp-eda-api",
+      "name": "MVP EDA API",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "redirectUris": [
+        "http://localhost:8001/*",
+        "http://localhost:8002/*",
+        "http://localhost:8003/*"
+      ],
+      "webOrigins": [
+        "http://localhost:8001",
+        "http://localhost:8002",
+        "http://localhost:8003"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "201544138",
+      "enabled": true,
+      "firstName": "Estudiante",
+      "lastName": "Ingenieria",
+      "email": "201544138@umg.edu.gt",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "estudiante123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "student"
+      ],
+      "attributes": {
+        "carnet": [
+          "201544138"
+        ],
+        "career": [
+          "Ciencias y Sistemas"
+        ]
+      }
+    },
+    {
+      "username": "profesor",
+      "enabled": true,
+      "firstName": "Profesor",
+      "lastName": "Demo",
+      "email": "profesor@umg.edu.gt",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "profesor123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "teacher"
+      ]
+    },
+    {
+      "username": "admin-demo",
+      "enabled": true,
+      "firstName": "Admin",
+      "lastName": "Demo",
+      "email": "admin@umg.edu.gt",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "admin"
+      ]
+    }
+  ]
+}

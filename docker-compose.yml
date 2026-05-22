@@ -1,0 +1,93 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0.6
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./security/keycloak:/opt/keycloak/data/import
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: asistencia
+      POSTGRES_PASSWORD: asistencia
+      POSTGRES_DB: asistencia_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./seeds/postgres:/docker-entrypoint-initdb.d
+
+  mongo:
+    image: mongo:7
+    environment:
+      MONGO_INITDB_DATABASE: pagos_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./seeds/mongo:/docker-entrypoint-initdb.d
+
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: panel_db
+      MYSQL_USER: panel
+      MYSQL_PASSWORD: panel
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./seeds/mysql:/docker-entrypoint-initdb.d
+
+  asistencia-service:
+    build: ./services/asistencia
+    environment:
+      DATABASE_URL: postgresql://asistencia:asistencia@postgres:5432/asistencia_db
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    ports:
+      - "8001:8000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_started
+
+  pagos-service:
+    build: ./services/pagos
+    environment:
+      MONGO_URL: mongodb://mongo:27017/pagos_db
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    ports:
+      - "8002:3000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+
+  panel-service:
+    build: ./services/panel
+    environment:
+      MYSQL_DSN: panel:panel@tcp(mysql:3306)/panel_db?parseTime=true
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    ports:
+      - "8003:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mysql:
+        condition: service_started

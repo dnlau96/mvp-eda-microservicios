@@ -1,0 +1,11 @@
+---
+deploy_path: /opt/mvp-eda
+project_src: "{{ playbook_dir }}/.."
+compose_project_name: mvp_eda
+
+# Puertos publicados hacia la maquina destino.
+asistencia_port: 8001
+pagos_port: 8002
+panel_port: 8003
+rabbitmq_ui_port: 15672
+mysql_public_port: 3307

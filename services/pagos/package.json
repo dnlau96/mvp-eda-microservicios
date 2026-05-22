@@ -1,0 +1,13 @@
+{
+  "name": "pagos-service",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "amqplib": "^0.10.5",
+    "express": "^4.21.2",
+    "mongodb": "^6.12.0"
+  }
+}
