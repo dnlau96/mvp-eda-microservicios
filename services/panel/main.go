@@ -237,6 +237,11 @@ const html = `<!doctype html>
       rating_id.value = "";
       loadRatings();
     });
+    function logoutWhenTabIsHidden() {
+      if (document.visibilityState !== "hidden") return;
+      navigator.sendBeacon("/logout");
+    }
+    document.addEventListener("visibilitychange", logoutWhenTabIsHidden);
     loadTalks().then(loadApproved);
     loadRatings();
     setInterval(loadApproved, 2500);

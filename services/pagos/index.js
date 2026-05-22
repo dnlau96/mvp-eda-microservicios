@@ -190,6 +190,11 @@ const html = `<!doctype html>
       showStatus("ok", "Pago guardado en MongoDB");
       loadRows();
     });
+    function logoutWhenTabIsHidden() {
+      if (document.visibilityState !== "hidden") return;
+      navigator.sendBeacon("/logout");
+    }
+    document.addEventListener("visibilitychange", logoutWhenTabIsHidden);
     loadRows();
   </script>
 </body>
