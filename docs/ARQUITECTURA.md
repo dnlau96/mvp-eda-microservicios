@@ -17,6 +17,7 @@ Servicio de soporte:
 | Servicio | Tecnologia | Puerto | Responsabilidad |
 | --- | --- | --- | --- |
 | Keycloak | Identity Provider | 8080 | Usuarios, roles y emision de tokens JWT. |
+| Jenkins | CI/CD | 8081 | Ejecuta pipeline de build, test, deploy y smoke test. |
 
 ## Bus de eventos
 
@@ -89,8 +90,11 @@ Mejoras recomendadas para produccion:
 El `Jenkinsfile` incluye tres etapas:
 
 1. Checkout.
-2. Lint/Test simulado.
-3. Build & Deploy con Docker Compose.
+2. Validate de `docker compose`.
+3. Lint/Test ligero de estructura.
+4. Build de imagenes Docker.
+5. Deploy con Docker Compose.
+6. Smoke test HTTP.
 
 Para una entrega mas completa se puede conectar Jenkins con GitHub Webhooks y agregar pruebas por servicio.
 
@@ -112,6 +116,7 @@ Puertos principales:
 8003  Panel
 15672 RabbitMQ Management
 8080  Keycloak
+8081  Jenkins
 3307  MySQL local
 ```
 

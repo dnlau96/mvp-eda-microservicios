@@ -14,6 +14,39 @@ Keycloak UI: http://localhost:8080 (`admin` / `admin`)
 
 Documentacion tecnica de arquitectura: [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md)
 Guia de seguridad Keycloak: [security/README.md](security/README.md)
+Guia CI/CD con Jenkins: [jenkins/README.md](jenkins/README.md)
+
+## Jenkins CI/CD
+
+Levantar Jenkins:
+
+```cmd
+docker compose up -d --build jenkins
+```
+
+Abrir:
+
+```text
+http://localhost:8081
+```
+
+Password inicial:
+
+```cmd
+docker compose exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+```
+
+Crear un Pipeline usando este repositorio:
+
+```text
+https://github.com/dnlau96/mvp-eda-microservicios.git
+```
+
+Script Path:
+
+```text
+Jenkinsfile
+```
 
 ## Probar flujo
 

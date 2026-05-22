@@ -21,6 +21,18 @@ services:
     volumes:
       - ./security/keycloak:/opt/keycloak/data/import
 
+  jenkins:
+    build: ./jenkins
+    user: root
+    ports:
+      - "8081:8080"
+      - "50000:50000"
+    environment:
+      JAVA_OPTS: -Djenkins.install.runSetupWizard=true
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+
   postgres:
     image: postgres:16
     environment:
@@ -91,3 +103,6 @@ services:
         condition: service_healthy
       mysql:
         condition: service_started
+
+volumes:
+  jenkins_home:
